@@ -1,0 +1,60 @@
+{
+  "modelo": "random_forest",
+  "n_amostras_shap": 500,
+  "top_features_global": {
+    "num__chuva_acum_14d": 0.088,
+    "num__ndvi": 0.0711,
+    "num__chuva_acum_7d": 0.0681,
+    "num__dias_sem_chuva": 0.0567,
+    "num__ndwi": 0.0486,
+    "num__chuva_mm": 0.0466,
+    "num__temp_max": 0.0316,
+    "num__temp_amplitude": 0.0239,
+    "num__temp_min": 0.0227,
+    "num__cobertura_nuvem": 0.0204
+  },
+  "casos_individuais": {
+    "alto_risco": {
+      "produtor_id": "seed-go-002",
+      "estado": "GO",
+      "cultura": "milho",
+      "prob_risco": 0.995,
+      "label_real": 1,
+      "top_contribuicoes": {
+        "num__chuva_acum_14d": 0.0886,
+        "num__dias_sem_chuva": 0.0748,
+        "num__chuva_acum_7d": 0.0715,
+        "num__ndvi": 0.0628,
+        "num__chuva_mm": 0.0601
+      }
+    },
+    "baixo_risco": {
+      "produtor_id": "seed-syn-031",
+      "estado": "PR",
+      "cultura": "cafe",
+      "prob_risco": 0.0,
+      "label_real": 0,
+      "top_contribuicoes": {
+        "num__chuva_acum_14d": -0.0868,
+        "num__chuva_acum_7d": -0.0658,
+        "num__ndvi": -0.0621,
+        "num__dias_sem_chuva": -0.0459,
+        "num__ndwi": -0.0448
+      }
+    },
+    "incerto": {
+      "produtor_id": "seed-syn-036",
+      "estado": "PI",
+      "cultura": "milho",
+      "prob_risco": 0.501,
+      "label_real": 1,
+      "top_contribuicoes": {
+        "num__chuva_acum_7d": -0.084,
+        "num__ndvi": 0.0768,
+        "num__dias_sem_chuva": -0.049,
+        "num__temp_max": 0.0385,
+        "num__temp_min": 0.03
+      }
+    }
+  }
+}
