@@ -1,92 +1,100 @@
-"""Lê dados granulares (produtor × data) do Oracle FIAP para o pipeline GAIE."""
+"""Carrega o dataset sintético em Excel para o pipeline GAIE."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-import oracledb
 import pandas as pd
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+ROOT = Path(__file__).resolve().parent.parent
+DATASET_PATH = ROOT / "data" / "agroorbit_dataset.xlsx"
 
-
-def get_connection():
-    return oracledb.connect(
-        user=os.environ["ORACLE_USER"],
-        password=os.environ["ORACLE_PASSWORD"],
-        dsn=f"{os.environ['ORACLE_HOST']}:{os.environ['ORACLE_PORT']}/{os.environ['ORACLE_SID']}",
-    )
-
-
-# Granular: 1 linha por (produtor, dia). Sentinel é forward-filled em features.py
-QUERY_GRANULAR = """
-SELECT
-  lc.produtor_id,
-  lc.data_ref,
-  p.estado,
-  p.cultura,
-  p.lat,
-  p.lon,
-  lc.temp_min,
-  lc.temp_max,
-  lc.chuva_mm,
-  ls.ndvi_medio,
-  ls.ndwi_medio,
-  ls.cobertura_nuvem
-FROM leituras_clima lc
-JOIN produtores p
-  ON p.id = lc.produtor_id
-LEFT JOIN leituras_sentinel ls
-  ON ls.produtor_id = lc.produtor_id
- AND ls.data_imagem = lc.data_ref
-ORDER BY lc.produtor_id, lc.data_ref
-"""
+REQUIRED_COLUMNS = [
+    "produtor_id",
+    "data_ref",
+    "estado",
+    "cultura",
+    "lat",
+    "lon",
+    "temp_min",
+    "temp_max",
+    "chuva_mm",
+    "ndvi_medio",
+    "ndwi_medio",
+    "cobertura_nuvem",
+]
 
 
-def load_granular() -> pd.DataFrame:
-    """Retorna DataFrame granular (produtor × dia) — base do dataset GAIE."""
-    with get_connection() as conn:
-        df = pd.read_sql(QUERY_GRANULAR, conn)
-    df.columns = [c.lower() for c in df.columns]
+def dataset_path() -> Path:
+    return DATASET_PATH
+
+
+def _normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Dataset sem colunas obrigatorias: {missing}")
+    df = df[REQUIRED_COLUMNS]
     df["data_ref"] = pd.to_datetime(df["data_ref"])
-    return df
+    df["produtor_id"] = df["produtor_id"].astype(str)
+    df["estado"] = df["estado"].astype(str)
+    df["cultura"] = df["cultura"].astype(str)
+    numeric_cols = [
+        "lat",
+        "lon",
+        "temp_min",
+        "temp_max",
+        "chuva_mm",
+        "ndvi_medio",
+        "ndwi_medio",
+        "cobertura_nuvem",
+    ]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=REQUIRED_COLUMNS)
 
 
-# Agregado por produtor (uso opcional pelo /predict endpoint)
-QUERY_AGREGADO_PRODUTOR = """
-SELECT
-  p.id              AS produtor_id,
-  p.estado,
-  p.cultura,
-  AVG(ls.ndvi_medio)        AS ndvi_medio_7d,
-  AVG(ls.ndwi_medio)        AS ndwi_medio_7d,
-  AVG(ls.cobertura_nuvem)   AS nuvem_media,
-  SUM(lc.chuva_mm)          AS chuva_7d,
-  AVG(lc.temp_max)          AS temp_max_media,
-  AVG(lc.temp_min)          AS temp_min_media,
-  COUNT(CASE WHEN lc.chuva_mm < 1 THEN 1 END) AS dias_sem_chuva
-FROM produtores p
-LEFT JOIN leituras_sentinel ls
-  ON ls.produtor_id = p.id AND ls.data_imagem >= TRUNC(SYSDATE) - 7
-LEFT JOIN leituras_clima lc
-  ON lc.produtor_id = p.id AND lc.data_ref     >= TRUNC(SYSDATE) - 7
-WHERE p.id = :produtor_id
-GROUP BY p.id, p.estado, p.cultura
-"""
+def load_granular(path: str | Path | None = None) -> pd.DataFrame:
+    """Retorna DataFrame granular produtor x dia a partir do Excel local."""
+    path = Path(path) if path else dataset_path()
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Dataset Excel nao encontrado em {path}. "
+            "Rode scripts/expand_dataset.py para gerar a planilha."
+        )
+    df = pd.read_excel(path, sheet_name="leituras_agroorbit")
+    return _normalizar_colunas(df)
 
 
-def load_features_produtor(produtor_id: str) -> pd.DataFrame:
-    """Features agregadas dos últimos 7 dias para 1 produtor (endpoint /predict)."""
-    with get_connection() as conn:
-        df = pd.read_sql(QUERY_AGREGADO_PRODUTOR, conn, params={"produtor_id": produtor_id})
-    df.columns = [c.lower() for c in df.columns]
-    return df
+def load_features_produtor(produtor_id: str, path: str | Path | None = None) -> pd.DataFrame:
+    """Agrega as leituras dos ultimos 7 dias de um produtor para uso opcional."""
+    df = load_granular(path)
+    df = df[df["produtor_id"] == produtor_id].sort_values("data_ref")
+    if df.empty:
+        return df
+    janela = df.tail(7)
+    return pd.DataFrame(
+        [
+            {
+                "produtor_id": produtor_id,
+                "estado": janela["estado"].iloc[-1],
+                "cultura": janela["cultura"].iloc[-1],
+                "ndvi_medio_7d": janela["ndvi_medio"].mean(),
+                "ndwi_medio_7d": janela["ndwi_medio"].mean(),
+                "nuvem_media": janela["cobertura_nuvem"].mean(),
+                "chuva_7d": janela["chuva_mm"].sum(),
+                "temp_max_media": janela["temp_max"].mean(),
+                "temp_min_media": janela["temp_min"].mean(),
+                "dias_sem_chuva": int((janela["chuva_mm"] < 1).sum()),
+            }
+        ]
+    )
 
 
 if __name__ == "__main__":
     df = load_granular()
+    print(f"Arquivo: {dataset_path()}")
     print(f"Linhas: {len(df)}")
     print(f"Colunas: {list(df.columns)}")
     print(df.head())

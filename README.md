@@ -1,302 +1,216 @@
 # agroorbit-ai
 
-> **Disciplina:** Generative AI For Engineering (GAIE) — Global Solution FIAP
-> **Aluno:** Samuel Ramos de Almeida (RM99134)
-> **Papel na plataforma AgroOrbit:** API de predição de risco agrícola consumida
-> pelo `agroorbit-bot` (WhatsApp). Lê features do Oracle FIAP populado pelo
-> `agroorbit-data` (BDDI) e retorna predição + explicação SHAP.
+> **Disciplina:** Generative AI For Engineering (GAIE) — Global Solution FIAP  
+> **Aluno:** Samuel Ramos de Almeida (RM99134)  
+> **Papel na plataforma AgroOrbit:** modelo de predição de risco de seca com explicação SHAP.
 
----
+## 1. Contexto do Problema
 
-## 1. Contexto do problema
+O AgroOrbit AI estima risco de seca para produtores rurais combinando variáveis climáticas, vegetação orbital e contexto agrícola. O objetivo é simular um pipeline de IA aplicado à economia espacial, usando sinais inspirados em Sentinel-2/NASA POWER:
 
-Pequeno produtor rural brasileiro perde safra por falta de informação técnica
-sobre risco climático. Diariamente milhares de fazendas operam sem acesso a
-modelos de risco que cooperativas e grandes players já consomem.
+- NDVI, NDWI e cobertura de nuvem;
+- chuva diária e acumulados recentes;
+- temperatura mínima/máxima;
+- estado, cultura e coordenadas da fazenda.
 
-O **AgroOrbit AI** treina um modelo supervisionado que, para cada fazenda
-cadastrada, prediz **risco de seca a curto prazo** combinando:
+## 2. Dataset
 
-- Imagens orbitais Sentinel-2 (NDVI, NDWI, cobertura de nuvem)
-- Clima derivado de satélite NASA POWER (chuva, temperatura)
-- Localização (estado) e tipo de cultura
+Este projeto **não usa Oracle**. O dataset está em Excel:
 
-A predição é exposta via API REST consumida pelo bot WhatsApp e por uma UI
-Gradio para demonstração.
-
-**Conexão com Economia Espacial:** o pipeline é alimentado por duas
-constelações de satélites (ESA Copernicus Sentinel-2 + NASA Earth Observing
-System). Sem dados orbitais, este modelo simplesmente não existe.
-
----
-
-## 2. Fonte dos dados
-
-| Fonte | Volume | Origem |
-|---|---|---|
-| **Oracle FIAP** — `leituras_clima` | 1860 linhas | NASA POWER + sintético calibrado |
-| **Oracle FIAP** — `leituras_sentinel` | 296 linhas | Sentinel Hub CDSE + sintético calibrado |
-| **Oracle FIAP** — `produtores` | 60 fazendas | Seed real + sintético cobrindo 13 UFs |
-
-O pipeline `agroorbit-data` (BDDI) é quem ingere os dados reais. Para atender o
-requisito GAIE de **≥1000 linhas × ≥10 colunas**, o script
-`scripts/expand_dataset.py` complementa com produtores sintéticos cujas
-distribuições foram calibradas nos dados reais (média de chuva por UF, NDVI
-típico por cultura, etc.).
-
-**Dataset final do treino:** 2020 linhas × 14 features + 1 target — após
-engenharia de atributos com janelas móveis.
-
----
-
-## 3. Metodologia
-
-### 3.1 Pré-processamento (`src/data_loader.py`)
-
-Query SQL com `JOIN` entre `leituras_clima`, `leituras_sentinel` e `produtores`
-retornando granularidade `(produtor, dia)`. Sentinel-2 só revisita a cada 5
-dias, então é `LEFT JOIN` e o forward-fill acontece em pandas.
-
-### 3.2 Engenharia de atributos (`src/features.py`)
-
-Janelas móveis por produtor:
-
-| Feature | Como | Por quê |
-|---|---|---|
-| `chuva_acum_7d`, `chuva_acum_14d` | Rolling sum 7d / 14d | Captura acumulado relevante para risco |
-| `dias_sem_chuva` | Contador sequencial reseta em chuva ≥1mm | Indicador clássico de estresse hídrico |
-| `temp_amplitude` | `temp_max − temp_min` | Amplitude térmica afeta cultura |
-| `ndvi_tendencia_7d` | `ndvi − ndvi(t-7d)` | Tendência > nível absoluto |
-| `mes` | Extraído da data | Sazonalidade |
-
-Categóricas: `estado` (13 UFs), `cultura` (7 culturas) — `OneHotEncoder`.
-Numéricas — `StandardScaler`.
-
-### 3.3 Target
-
-`risco_seca` (binário) construído via função latente sigmoide com pesos
-diferentes por cultura (soja/milho/arroz mais sensíveis; cana/café/laranja
-mais tolerantes) + ruído gaussiano — evita label leakage perfeita e força o
-modelo a aprender a interação cultura × clima.
-
-Distribuição final: 54% baixo risco / 46% alto risco (balanceado).
-
-### 3.4 Treino e validação (`src/train.py`)
-
-- Split 80/20 estratificado
-- Cross-validation 5-fold estratificado no treino
-- Métricas: ROC AUC, F1, Precision, Recall, matriz de confusão
-- Pipeline scikit-learn: `ColumnTransformer` → modelo
-- Seleção pelo melhor ROC AUC no teste
-
----
-
-## 4. Modelos testados
-
-| Modelo | Hiperparâmetros principais |
-|---|---|
-| **Random Forest** | 300 árvores, max_depth=10, min_samples_split=5 |
-| **XGBoost** | 300 estimadores, max_depth=6, learning_rate=0.1 |
-
----
-
-## 5. Resultados obtidos
-
-### 5.1 Cross-validation (5-fold no treino) — ROC AUC
-
-| Modelo | Média | Desvio | Folds |
-|---|---|---|---|
-| **Random Forest** | **0.948** | ±0.015 | [0.945, 0.948, 0.922, 0.957, 0.966] |
-| XGBoost | 0.939 | ±0.017 | [0.943, 0.929, 0.912, 0.955, 0.956] |
-
-### 5.2 Avaliação no teste (404 amostras)
-
-| Métrica | Random Forest | XGBoost |
-|---|---|---|
-| **ROC AUC** | **0.932** | 0.921 |
-| F1 | 0.827 | 0.818 |
-| Precision | 0.831 | 0.813 |
-| Recall | 0.822 | 0.822 |
-
-**Matriz de confusão — Random Forest (vencedor):**
-
-|  | Pred=Baixo | Pred=Alto |
-|---|---|---|
-| Real=Baixo | 194 | 30 |
-| Real=Alto | 32 | 148 |
-
-→ 84.6% acurácia, taxa de falso negativo (perda crítica para o produtor) de 17.8%.
-
----
-
-## 6. Interpretação com SHAP
-
-Implementação em `src/shap_explainer.py` — `TreeExplainer` (exato para
-árvores) sobre 500 amostras.
-
-### 6.1 Importância global (top 10)
-
-| # | Feature | \|SHAP médio\| |
-|---|---|---|
-| 1 | chuva_acum_14d | 0.0880 |
-| 2 | ndvi | 0.0711 |
-| 3 | chuva_acum_7d | 0.0681 |
-| 4 | dias_sem_chuva | 0.0567 |
-| 5 | ndwi | 0.0486 |
-| 6 | chuva_mm (dia) | 0.0466 |
-| 7 | temp_max | 0.0316 |
-| 8 | temp_amplitude | 0.0239 |
-| 9 | temp_min | 0.0227 |
-| 10 | cobertura_nuvem | 0.0204 |
-
-→ Confirma intuição agronômica: **chuva acumulada 14d** domina, seguida por
-NDVI e dias sem chuva. Temperatura e cobertura de nuvem têm peso menor.
-
-Gráficos em `models/shap_importance.png` (bar) e `models/shap_summary.png`
-(beeswarm).
-
-### 6.2 Casos individuais (3 amostras)
-
-| Caso | Produtor | UF/Cultura | Prob | Real |
-|---|---|---|---|---|
-| **Alto risco** | seed-go-002 | GO / milho | 99.5% | 1 |
-| **Baixo risco** | seed-syn-031 | PR / café | 0.0% | 0 |
-| **Incerto** | seed-syn-036 | PI / milho | 50.1% | 1 |
-
-Waterfall plots: `models/shap_waterfall_alto_risco.png`,
-`shap_waterfall_baixo_risco.png`, `shap_waterfall_incerto.png`.
-
-Reporte completo em JSON: `models/shap_report.json`.
-
----
-
-## 7. Deploy
-
-Stack: **Gradio** (UI demo) + **FastAPI** (endpoints REST consumidos pelo bot).
-
-Endpoints:
-
-| Método | Rota | Função |
-|---|---|---|
-| GET | `/health` | status do modelo + AUC |
-| POST | `/predict` | predição por `produtor_id` (consulta Oracle) |
-| POST | `/predict/manual` | predição via dict de features |
-| GET | `/shap/global` | top features globais + casos |
-
-Exemplo de chamada:
-
-```bash
-curl -X POST http://localhost:7860/predict \
-  -H "Content-Type: application/json" \
-  -d '{"produtor_id":"seed-mt-001"}'
+```text
+data/agroorbit_dataset.xlsx
 ```
 
-Resposta:
+O arquivo contém uma base sintética gerada por IA/código para atender ao requisito GAIE:
 
-```json
-{
-  "produtor_id": "seed-mt-001",
-  "data_ref": "2026-05-25",
-  "modelo": "random_forest",
-  "risco_seca_prob": 0.011,
-  "classificacao": "OK",
-  "shap_top": {
-    "num__dias_sem_chuva": 0.0694,
-    "num__chuva_acum_14d": 0.0689,
-    "num__chuva_mm": 0.0676
-  }
-}
+| Item | Valor |
+| --- | ---: |
+| Linhas | 1.500 |
+| Colunas originais | 12 |
+| Produtores sintéticos | 50 |
+| Dias por produtor | 30 |
+| Granularidade | produtor × dia |
+
+Colunas do Excel:
+
+```text
+produtor_id, data_ref, estado, cultura, lat, lon,
+temp_min, temp_max, chuva_mm, ndvi_medio, ndwi_medio, cobertura_nuvem
 ```
 
----
-
-## 8. Instruções de execução
-
-### 8.1 Pré-requisitos
-
-- Python 3.11
-- Oracle FIAP acessível (`ORACLE_HOST=oracle.fiap.com.br`)
-- Pipeline BDDI (`agroorbit-data`) já rodado pelo menos uma vez (popula
-  tabelas reais)
-
-### 8.2 Setup
-
-```bash
-cd repos/agroorbit-ai
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# preencher ORACLE_USER e ORACLE_PASSWORD em .env
-```
-
-### 8.3 Popular dataset (≥1000 linhas no Oracle)
+Para regenerar a planilha:
 
 ```bash
 python scripts/expand_dataset.py
 ```
 
-### 8.4 Treinar + avaliar + escolher melhor
+## 3. Metodologia
+
+`src/data_loader.py` lê `data/agroorbit_dataset.xlsx` com pandas (caminho fixo no código, sem `.env`).
+
+`src/features.py` cria as features finais:
+
+| Feature | Como é calculada |
+| --- | --- |
+| `chuva_acum_7d`, `chuva_acum_14d` | soma móvel por produtor |
+| `dias_sem_chuva` | sequência de dias com chuva menor que 1 mm |
+| `temp_amplitude` | `temp_max - temp_min` |
+| `ndvi_tendencia_7d` | diferença do NDVI contra 7 dias antes |
+| `mes` | extraído de `data_ref` |
+
+O target `risco_seca` é binário e sintético, construído por função latente com chuva, NDVI, dias sem chuva, temperatura e sensibilidade por cultura.
+
+## 4. Modelos
+
+Foram comparadas duas técnicas:
+
+| Modelo | Configuração |
+| --- | --- |
+| Random Forest | 300 árvores, `max_depth=10`, `min_samples_split=5` |
+| XGBoost | 300 estimadores, `max_depth=6`, `learning_rate=0.1` |
+
+Pipeline:
+
+```text
+ColumnTransformer(OneHotEncoder + StandardScaler) → modelo
+```
+
+## 5. Resultados
+
+Dataset final após engenharia de atributos: **1.500 linhas, 14 features + target**.
+
+Cross-validation 5-fold no treino:
+
+| Modelo | ROC AUC médio | Desvio |
+| --- | ---: | ---: |
+| Random Forest | 0.838 | 0.025 |
+| XGBoost | 0.820 | 0.023 |
+
+Teste holdout de 300 amostras:
+
+| Métrica | Random Forest | XGBoost |
+| --- | ---: | ---: |
+| ROC AUC | 0.809 | 0.772 |
+| F1 | 0.746 | 0.722 |
+| Precision | 0.748 | 0.727 |
+| Recall | 0.743 | 0.717 |
+
+Melhor modelo: **Random Forest**.
+
+Matriz de confusão do Random Forest:
+
+| | Pred=Baixo | Pred=Alto |
+| --- | ---: | ---: |
+| Real=Baixo | 110 | 38 |
+| Real=Alto | 39 | 113 |
+
+## 6. SHAP
+
+`src/shap_explainer.py` gera interpretação global e local com SHAP.
+
+Top features globais:
+
+| # | Feature | SHAP médio absoluto |
+| ---: | --- | ---: |
+| 1 | `ndvi` | 0.0690 |
+| 2 | `dias_sem_chuva` | 0.0682 |
+| 3 | `chuva_acum_7d` | 0.0613 |
+| 4 | `ndwi` | 0.0563 |
+| 5 | `chuva_acum_14d` | 0.0547 |
+
+Artefatos:
+
+- `models/shap_importance.png`
+- `models/shap_summary.png`
+- `models/shap_waterfall_alto_risco.png`
+- `models/shap_waterfall_baixo_risco.png`
+- `models/shap_waterfall_incerto.png`
+- `models/shap_report.json`
+
+## 7. API e Demo
+
+Endpoints:
+
+| Método | Rota | Função |
+| --- | --- | --- |
+| GET | `/health` | status do modelo |
+| POST | `/predict` | predição por `produtor_id` do Excel |
+| POST | `/predict/manual` | predição por features manuais |
+| GET | `/shap/global` | relatório SHAP global |
+
+Exemplo:
+
+```bash
+curl -X POST http://localhost:7860/predict \
+  -H "Content-Type: application/json" \
+  -d '{"produtor_id":"xlsx-syn-001"}'
+```
+
+## 8. Como Executar
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Regenerar dataset:
+
+```bash
+python scripts/expand_dataset.py
+```
+
+Treinar e avaliar:
 
 ```bash
 python src/train.py
 ```
 
-Artefatos gerados:
-
-- `models/best_model.pkl` — pipeline (pré-proc + modelo)
-- `models/metricas.json` — CV + teste
-
-### 8.5 Gerar SHAP global + 3 casos
+Gerar SHAP:
 
 ```bash
 python src/shap_explainer.py
 ```
 
-### 8.6 Servir Gradio + API
+Servir demo/API:
 
 ```bash
-python src/predict.py            # UI em http://localhost:7860
-# OU só API:
+python src/predict.py
+# ou
 uvicorn src.predict:app --host 0.0.0.0 --port 7860
 ```
 
----
+## 9. Estrutura
 
-## 9. Estrutura do repositório
-
-```
+```text
 agroorbit-ai/
+├── data/
+│   └── agroorbit_dataset.xlsx
 ├── scripts/
-│   └── expand_dataset.py        # popula Oracle com sintético calibrado
+│   └── expand_dataset.py
 ├── src/
-│   ├── data_loader.py           # queries Oracle (granular + agregado)
-│   ├── features.py              # engenharia de atributos + target
-│   ├── train.py                 # treino + CV + comparação + seleção
-│   ├── shap_explainer.py        # SHAP global + 3 casos individuais
-│   └── predict.py               # Gradio + FastAPI
-├── models/                      # gerados pelo pipeline
+│   ├── data_loader.py
+│   ├── features.py
+│   ├── train.py
+│   ├── shap_explainer.py
+│   └── predict.py
+├── models/
 │   ├── best_model.pkl
 │   ├── metricas.json
 │   ├── shap_report.json
-│   ├── shap_importance.png
-│   ├── shap_summary.png
-│   └── shap_waterfall_*.png
+│   └── shap_*.png
 ├── requirements.txt
-├── README.md
-└── .env.example
+└── README.md
 ```
-
----
 
 ## 10. Checklist GAIE
 
-| Critério | Peso | Status |
-|---|---:|---|
-| Dataset ≥1000 linhas × ≥10 colunas | 15 | ✅ 2020 × 14 |
-| Pré-processamento e engenharia de atributos | 20 | ✅ rolling windows, lag, one-hot, scaler |
-| Aplicação e comparação de modelos (≥2 técnicas) | 20 | ✅ RF vs XGBoost |
-| Validação e análise de métricas | 15 | ✅ CV 5-fold + ROC AUC + F1 + P/R + CM |
-| Interpretabilidade com SHAP | 10 | ✅ global + 3 individuais |
-| Deploy da aplicação | 10 | ✅ Gradio + FastAPI |
-| Organização e README | 10 | ✅ este arquivo |
-| **Total** | **100** | ✅ |
+| Critério | Status |
+| --- | --- |
+| Dataset sintético com mínimo de 1.000 linhas | OK: 1.500 linhas |
+| Dataset com mínimo de 10 colunas | OK: 12 colunas |
+| Pré-processamento e engenharia de atributos | OK |
+| Comparação de pelo menos 2 modelos | OK: Random Forest vs XGBoost |
+| Validação e métricas | OK |
+| Interpretabilidade | OK: SHAP |
+| Deploy/API/demo | OK |

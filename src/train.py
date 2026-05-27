@@ -62,7 +62,7 @@ def avaliar(nome: str, pipe: Pipeline, X_test, y_test) -> dict:
 
 def main():
     print("=== Pipeline GAIE — Treino e Comparação ===")
-    print("\n[1/5] Carregando dados granulares do Oracle...")
+    print("\n[1/5] Carregando dados granulares do Excel...")
     raw = load_granular()
     print(f"  {len(raw)} linhas brutas (produtor × dia)")
 

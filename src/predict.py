@@ -8,7 +8,6 @@ Modos:
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -72,7 +71,7 @@ def predizer_via_features(features: dict) -> dict:
 
 
 def predizer_via_produtor(produtor_id: str) -> dict:
-    """Busca leituras dos últimos 30 dias do produtor, gera features e prediz."""
+    """Busca leituras do produtor no Excel, gera features e prediz."""
     from data_loader import load_granular
     from features import build_dataset
 
@@ -227,14 +226,14 @@ def lancar_gradio():
             outputs=out,
         )
 
-        gr.Markdown(
-            "**Endpoints REST:** "
-            "`POST /predict` (por `produtor_id`), "
-            "`POST /predict/manual` (features), "
-            "`GET /shap/global`, `GET /health`."
-        )
+    gr.Markdown(
+        "**Endpoints REST:** "
+        "`POST /predict` (por `produtor_id`), "
+        "`POST /predict/manual` (features), "
+        "`GET /shap/global`, `GET /health`."
+    )
 
-    demo.launch(server_port=int(os.getenv("PORT", 7860)), server_name="0.0.0.0")
+    demo.launch(server_port=7860, server_name="0.0.0.0")
 
 
 if __name__ == "__main__":

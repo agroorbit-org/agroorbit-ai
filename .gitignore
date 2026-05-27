@@ -1,8 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
-.env
-models/*.pkl
 data/*.csv
 data/*.parquet
 .ipynb_checkpoints/
