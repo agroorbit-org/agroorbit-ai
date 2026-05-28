@@ -15,6 +15,8 @@ pinned: false
 > **Aluno:** Samuel Ramos de Almeida (RM99134)  
 > **Papel na plataforma AgroOrbit:** modelo de predição de risco de seca com explicação SHAP.
 
+🚀 **Aplicação em funcionamento:** https://huggingface.co/spaces/samuksx87/agroorbit
+
 ## 1. Contexto do Problema
 
 O AgroOrbit AI estima risco de seca para produtores rurais combinando variáveis climáticas, vegetação orbital e contexto agrícola. O objetivo é simular um pipeline de IA aplicado à economia espacial, usando sinais inspirados em Sentinel-2/NASA POWER:
@@ -139,6 +141,8 @@ Artefatos:
 - `models/shap_report.json`
 
 ## 7. API e Demo
+
+**App online (Hugging Face Spaces):** https://huggingface.co/spaces/samuksx87/agroorbit
 
 Endpoints:
 
