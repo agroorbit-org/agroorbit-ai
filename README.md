@@ -1,13 +1,4 @@
----
-title: AgroOrbit AI
-emoji: 🌱
-colorFrom: green
-colorTo: blue
-sdk: gradio
-sdk_version: 5.5.0
-app_file: app.py
-pinned: false
----
+🚀 **Aplicação em funcionamento:** https://huggingface.co/spaces/samuksx87/agroorbit
 
 # agroorbit-ai
 
