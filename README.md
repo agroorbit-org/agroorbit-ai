@@ -195,7 +195,45 @@ python src/predict.py
 uvicorn src.predict:app --host 0.0.0.0 --port 7860
 ```
 
-## 9. Estrutura
+## 9. Testes e Resultados Esperados
+
+Cenários de validação para conferir o comportamento do modelo (Random Forest, threshold 0.5).
+Probabilidades aproximadas — pequenas variações são normais por re-treino.
+
+| Cenário | Estado / Cultura | NDVI | Chuva 7d (mm) | Dias sem chuva | `prob` risco seca | Classificação |
+| ------- | ---------------- | ---: | ------------: | -------------: | ----------------: | ------------- |
+| Seca crítica | MT / soja | 0.18 | 2 | 21 | **~74%** | 🔴 ALTO RISCO |
+| Intermediário | GO / milho | 0.45 | 15 | 7 | **~46%** | 🟡 OK (limítrofe) |
+| Saudável | PR / soja | 0.72 | 60 | 0 | **~13%** | 🟢 OK |
+
+> **Leitura:** `prob` = probabilidade de **alto risco de seca**. Quanto menor o NDVI, menor a chuva
+> acumulada e mais dias sem chuva → maior a probabilidade. As variáveis de maior peso (SHAP global)
+> são `ndvi`, `dias_sem_chuva` e `chuva_acum_7d`.
+
+### Testar via API
+
+```bash
+# Cenário de seca crítica → espera prob ~0.74 (ALTO RISCO)
+curl -X POST http://localhost:7860/predict/manual \
+  -H "Content-Type: application/json" \
+  -d '{"estado":"MT","cultura":"soja","temp_min":20,"temp_max":38,"chuva_mm":0,
+       "ndvi":0.18,"ndwi":-0.10,"cobertura_nuvem":10,"chuva_acum_7d":2,
+       "chuva_acum_14d":5,"temp_amplitude":18,"ndvi_tendencia_7d":-0.20,
+       "dias_sem_chuva":21,"mes":8}'
+
+# Cenário saudável → espera prob ~0.13 (OK)
+curl -X POST http://localhost:7860/predict/manual \
+  -H "Content-Type: application/json" \
+  -d '{"estado":"PR","cultura":"soja","temp_min":18,"temp_max":28,"chuva_mm":12,
+       "ndvi":0.72,"ndwi":0.45,"cobertura_nuvem":30,"chuva_acum_7d":60,
+       "chuva_acum_14d":120,"temp_amplitude":10,"ndvi_tendencia_7d":0.05,
+       "dias_sem_chuva":0,"mes":1}'
+```
+
+Na UI Gradio (https://huggingface.co/spaces/samuksx87/agroorbit), reproduza arrastando os sliders
+para os valores da tabela e clicando em **Prever risco**.
+
+## 10. Estrutura
 
 ```text
 agroorbit-ai/
@@ -218,7 +256,7 @@ agroorbit-ai/
 └── README.md
 ```
 
-## 10. Checklist GAIE
+## 11. Checklist GAIE
 
 | Critério                                     | Status                       |
 | -------------------------------------------- | ---------------------------- |
