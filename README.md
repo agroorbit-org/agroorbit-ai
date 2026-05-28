@@ -17,6 +17,21 @@ pinned: false
 
 🚀 **Aplicação em funcionamento:** https://huggingface.co/spaces/samuksx87/agroorbit
 
+## Testes e Resultados Esperados
+
+Cenários de validação para conferir o comportamento do modelo (Random Forest, threshold 0.5).
+Probabilidades aproximadas — pequenas variações são normais por re-treino.
+
+| Cenário | Estado / Cultura | NDVI | Chuva 7d (mm) | Dias sem chuva | `prob` risco seca | Classificação |
+| ------- | ---------------- | ---: | ------------: | -------------: | ----------------: | ------------- |
+| Seca crítica | MT / soja | 0.18 | 2 | 21 | **~74%** | 🔴 ALTO RISCO |
+| Intermediário | GO / milho | 0.45 | 15 | 7 | **~46%** | 🟡 OK (limítrofe) |
+| Saudável | PR / soja | 0.72 | 60 | 0 | **~13%** | 🟢 OK |
+
+> **Leitura:** `prob` = probabilidade de **alto risco de seca**. Quanto menor o NDVI, menor a chuva
+> acumulada e mais dias sem chuva → maior a probabilidade. As variáveis de maior peso (SHAP global)
+> são `ndvi`, `dias_sem_chuva` e `chuva_acum_7d`.
+
 ## 1. Contexto do Problema
 
 O AgroOrbit AI estima risco de seca para produtores rurais combinando variáveis climáticas, vegetação orbital e contexto agrícola. O objetivo é simular um pipeline de IA aplicado à economia espacial, usando sinais inspirados em Sentinel-2/NASA POWER:
@@ -194,21 +209,6 @@ python src/predict.py
 # ou
 uvicorn src.predict:app --host 0.0.0.0 --port 7860
 ```
-
-## 9. Testes e Resultados Esperados
-
-Cenários de validação para conferir o comportamento do modelo (Random Forest, threshold 0.5).
-Probabilidades aproximadas — pequenas variações são normais por re-treino.
-
-| Cenário | Estado / Cultura | NDVI | Chuva 7d (mm) | Dias sem chuva | `prob` risco seca | Classificação |
-| ------- | ---------------- | ---: | ------------: | -------------: | ----------------: | ------------- |
-| Seca crítica | MT / soja | 0.18 | 2 | 21 | **~74%** | 🔴 ALTO RISCO |
-| Intermediário | GO / milho | 0.45 | 15 | 7 | **~46%** | 🟡 OK (limítrofe) |
-| Saudável | PR / soja | 0.72 | 60 | 0 | **~13%** | 🟢 OK |
-
-> **Leitura:** `prob` = probabilidade de **alto risco de seca**. Quanto menor o NDVI, menor a chuva
-> acumulada e mais dias sem chuva → maior a probabilidade. As variáveis de maior peso (SHAP global)
-> são `ndvi`, `dias_sem_chuva` e `chuva_acum_7d`.
 
 ### Testar via API
 
